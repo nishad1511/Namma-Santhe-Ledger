@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Customer": {
+      "title": "Customer",
+      "description": "A person who buys from the vendor",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the customer" },
+        "phone": { "type": "string", "description": "Contact phone number for WhatsApp reminders" },
+        "totalDue": { "type": "number", "description": "Total outstanding amount (Udari)" },
+        "ownerId": { "type": "string", "description": "UID of the vendor who owns this record" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "totalDue", "ownerId"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A credit (Udari) or payment record",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string", "description": "Reference to the customer" },
+        "customerName": { "type": "string", "description": "Denormalized name for quick search" },
+        "amount": { "type": "number", "description": "Transaction amount" },
+        "type": { "type": "string", "enum": ["credit", "payment"] },
+        "ownerId": { "type": "string", "description": "UID of the vendor who owns this record" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["customerId", "amount", "type", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Collection of regular customers"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Log of all credits and payments"
+    }
+  }
+}

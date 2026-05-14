@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(data) {
+      return isSignedIn() && data.ownerId == request.auth.uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Phase 4: Entity Validation
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['name', 'totalDue', 'ownerId', 'updatedAt']) &&
+             data.keys().size() <= 6 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.totalDue is number &&
+             data.ownerId == request.auth.uid &&
+             data.updatedAt == request.time &&
+             (data.phone == null || (data.phone is string && data.phone.size() <= 20));
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['customerId', 'amount', 'type', 'ownerId', 'timestamp', 'customerName']) &&
+             data.keys().size() <= 8 &&
+             isValidId(data.customerId) &&
+             data.amount is number && data.amount > 0 &&
+             data.type in ['credit', 'payment'] &&
+             data.ownerId == request.auth.uid &&
+             data.timestamp == request.time &&
+             data.customerName is string && data.customerName.size() <= 200;
+    }
+
+    // Rules for Customers
+    match /customers/{customerId} {
+      allow get: if isOwner(resource.data);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isValidCustomer(request.resource.data);
+      
+      allow update: if isValidCustomer(request.resource.data) && 
+                      isOwner(resource.data) &&
+                      request.resource.data.ownerId == resource.data.ownerId &&
+                      // Action: Update Due
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totalDue', 'updatedAt', 'phone', 'name']);
+      
+      allow delete: if isOwner(resource.data);
+    }
+
+    // Rules for Transactions
+    match /transactions/{transactionId} {
+      allow get: if isOwner(resource.data);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isValidTransaction(request.resource.data) &&
+                      // 7. Atomic Guarantee: Ensure customer exists and is owned by user
+                      exists(/databases/$(database)/documents/customers/$(request.resource.data.customerId)) &&
+                      get(/databases/$(database)/documents/customers/$(request.resource.data.customerId)).data.ownerId == request.auth.uid;
+      
+      // Transactions are typically immutable for accounting integrity
+      allow update: if false;
+      allow delete: if isOwner(resource.data);
+    }
+  }
+}
